@@ -23,9 +23,12 @@ wheels/
 # Virtual environment
 venv/
 .venv/
+.venv-manim/
 env/
-.env/
 ENV/
+
+# Environment variables (contains API keys)
+.env
 
 # PyTorch checkpoints and models
 checkpoints/
@@ -62,3 +65,17 @@ htmlcov/
 # uv
 .uv/
 uv.lock
+
+# Archive (old checkpoints and experiments)
+archive/
+
+# Weights & Biases logs
+wandb/
+
+# Manim rendered output
+media/
+
+# Hyperparameter search scripts
+scripts/training/hyperparam_search.py
+scripts/training/run_hyperparam_search.sh
+docs/non_effective_hyperparameters.md

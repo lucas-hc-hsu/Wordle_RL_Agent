@@ -9,34 +9,42 @@ class ActorCritic(nn.Module):
     The actor outputs action probabilities, and the critic outputs state values.
     """
 
-    def __init__(self, state_size, action_size, device, hidden_size=512):
+    def __init__(self, state_size, action_size, device, hidden_size=512, num_layers=2):
         super(ActorCritic, self).__init__()
         self.device = device
 
-        # Shared feature extractor
-        self.shared = nn.Sequential(
-            nn.Linear(state_size, hidden_size),
-            nn.LayerNorm(hidden_size),
-            nn.ReLU(),
-            nn.Linear(hidden_size, hidden_size),
-            nn.LayerNorm(hidden_size),
-            nn.ReLU(),
-        )
+        # Shared feature extractor - deeper and wider for better GPU utilization
+        shared_layers = []
+        in_size = state_size
+        for i in range(num_layers):
+            shared_layers.extend([
+                nn.Linear(in_size, hidden_size),
+                nn.LayerNorm(hidden_size),
+                nn.ReLU(),
+            ])
+            in_size = hidden_size
+        self.shared = nn.Sequential(*shared_layers)
 
-        # Actor head (policy network)
+        # Actor head (policy network) - wider
         self.actor = nn.Sequential(
             nn.Linear(hidden_size, hidden_size),
             nn.LayerNorm(hidden_size),
             nn.ReLU(),
-            nn.Linear(hidden_size, action_size),
+            nn.Linear(hidden_size, hidden_size // 2),
+            nn.LayerNorm(hidden_size // 2),
+            nn.ReLU(),
+            nn.Linear(hidden_size // 2, action_size),
         )
 
-        # Critic head (value network)
+        # Critic head (value network) - wider
         self.critic = nn.Sequential(
             nn.Linear(hidden_size, hidden_size),
             nn.LayerNorm(hidden_size),
             nn.ReLU(),
-            nn.Linear(hidden_size, 1),
+            nn.Linear(hidden_size, hidden_size // 2),
+            nn.LayerNorm(hidden_size // 2),
+            nn.ReLU(),
+            nn.Linear(hidden_size // 2, 1),
         )
 
         self.to(device)
