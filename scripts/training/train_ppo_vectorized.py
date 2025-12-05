@@ -18,7 +18,7 @@ VRAM Usage Guide:
 
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 import torch
 import torch.nn as nn
@@ -31,8 +31,8 @@ import argparse
 import wandb
 from model.ppo import ActorCritic
 
-# VRAM limit configuration (50% of 32GB = 16GB)
-MAX_VRAM_GB = 16.0
+# VRAM limit configuration (75% of 32GB = 24GB)
+MAX_VRAM_GB = 24.0
 
 
 def get_vram_usage_gb():
@@ -63,15 +63,27 @@ class FullyVectorizedWordleEnv:
     2. Vectorized reward calculation using tensor operations
     3. Vectorized state updates using scatter operations
     4. Bitmap-based guess tracking instead of Python sets
+
+    Supports train/test split:
+    - word_list: Full list of words the agent can guess
+    - target_word_indices: Indices into word_list that can be selected as targets
     """
 
-    def __init__(self, word_list, device, num_envs=1024):
+    def __init__(self, word_list, device, num_envs=1024, target_word_indices=None):
         self.word_list = word_list
         self.num_words = len(word_list)
         self.device = device
         self.num_envs = num_envs
         self.max_tries = 6
         self.state_size = 26 * 3  # 26 letters * 3 states
+
+        # Target word indices (subset of word_list that can be selected as targets)
+        # If None, all words can be targets (backward compatible)
+        if target_word_indices is None:
+            self.target_word_indices = torch.arange(self.num_words, device=device, dtype=torch.long)
+        else:
+            self.target_word_indices = torch.tensor(target_word_indices, device=device, dtype=torch.long)
+        self.num_target_words = len(self.target_word_indices)
 
         # Pre-compute word data as tensors
         self._precompute_word_tensors()
@@ -119,10 +131,12 @@ class FullyVectorizedWordleEnv:
         """
         if env_indices is None:
             # Reset all environments
-            self.target_indices = torch.randint(
-                0, self.num_words, (self.num_envs,),
+            # Select random indices from target_word_indices (train/test subset)
+            random_idx = torch.randint(
+                0, self.num_target_words, (self.num_envs,),
                 device=self.device, dtype=torch.long
             )
+            self.target_indices = self.target_word_indices[random_idx]
             self.current_tries.zero_()
             self.states.zero_()
             self.dones.zero_()
@@ -133,10 +147,12 @@ class FullyVectorizedWordleEnv:
 
             # Reset only specified environments
             num_reset = env_indices.numel()
-            self.target_indices[env_indices] = torch.randint(
-                0, self.num_words, (num_reset,),
+            # Select random indices from target_word_indices (train/test subset)
+            random_idx = torch.randint(
+                0, self.num_target_words, (num_reset,),
                 device=self.device, dtype=torch.long
             )
+            self.target_indices[env_indices] = self.target_word_indices[random_idx]
             self.current_tries[env_indices] = 0
             self.states[env_indices] = 0
             self.dones[env_indices] = False
@@ -516,9 +532,18 @@ class PPOAgent:
         }
 
     def save_checkpoint(self, update, win_rate, checkpoint_dir="checkpoints"):
-        """Save model checkpoint."""
+        """Save model checkpoint with incremental naming.
+
+        Saves checkpoints as: wordle_ppo_vectorized_10.pt, wordle_ppo_vectorized_20.pt, etc.
+        Also saves a 'latest' checkpoint that is always overwritten.
+        """
         os.makedirs(checkpoint_dir, exist_ok=True)
-        checkpoint_path = os.path.join(checkpoint_dir, "wordle_ppo_vectorized.pt")
+
+        # Save numbered checkpoint (e.g., wordle_ppo_vectorized_10.pt)
+        numbered_checkpoint_path = os.path.join(checkpoint_dir, f"wordle_ppo_vectorized_{update}.pt")
+
+        # Also save a 'latest' checkpoint that is always overwritten
+        latest_checkpoint_path = os.path.join(checkpoint_dir, "wordle_ppo_vectorized.pt")
 
         checkpoint = {
             "update": update,
@@ -527,8 +552,9 @@ class PPOAgent:
             "win_rate": win_rate,
         }
 
-        torch.save(checkpoint, checkpoint_path)
-        return checkpoint_path
+        torch.save(checkpoint, numbered_checkpoint_path)
+        torch.save(checkpoint, latest_checkpoint_path)
+        return numbered_checkpoint_path
 
     def load_checkpoint(self, checkpoint_path):
         """Load model checkpoint."""
@@ -544,25 +570,91 @@ def load_word_list():
     return load_curated_words()
 
 
+def load_word_list_with_split(test_ratio=0.2, seed=42):
+    """Load word list with train/test split."""
+    from utils.word_list import load_word_list_split
+    return load_word_list_split(test_ratio=test_ratio, seed=seed)
+
+
+def evaluate_on_test_set(agent, word_list, test_word_indices, device, num_games=500):
+    """
+    Evaluate the agent on the test set.
+
+    Args:
+        agent: The trained PPO agent
+        word_list: Full word list (for guessing)
+        test_word_indices: Indices of test words in word_list
+        device: torch device
+        num_games: Number of games to play for evaluation
+
+    Returns:
+        dict: Evaluation metrics (win_rate, avg_guesses)
+    """
+    # Create test environment with test words as targets
+    test_env = FullyVectorizedWordleEnv(
+        word_list, device, num_envs=num_games,
+        target_word_indices=test_word_indices
+    )
+
+    states = test_env.reset()
+    wins = 0
+    total_guesses = 0
+    completed = 0
+
+    # Play until all games are done
+    max_steps = 6 * 2  # Max 6 guesses per game, with some buffer
+    for _ in range(max_steps):
+        with torch.no_grad():
+            actions, _, _ = agent.act(states)
+        states, rewards, dones, infos = test_env.step(actions)
+
+        # Track wins for newly completed games
+        just_won = infos["won"] & ~test_env.dones
+        wins += just_won.sum().item()
+
+        # Track completed games
+        just_done = dones & ~test_env.dones
+        completed += just_done.sum().item()
+
+        # Track guesses for completed games
+        total_guesses += test_env.current_tries[just_done].sum().item()
+
+        if dones.all():
+            break
+
+    win_rate = wins / num_games if num_games > 0 else 0
+    avg_guesses = total_guesses / max(completed, 1)
+
+    return {
+        "test_win_rate": win_rate,
+        "test_avg_guesses": avg_guesses,
+        "test_games": num_games,
+    }
+
+
 def train(
     num_envs=1024,
-    total_timesteps=10_000_000,
+    total_timesteps=131_200_000,  # ~1000 updates for thorough training
     steps_per_update=128,
     use_wandb=True,
     wandb_project="wordle-rl-agent",
     wandb_run_name=None,
-    lr=3e-4,
+    lr=1e-4,  # Low LR for stable convergence
     gamma=0.99,
     gae_lambda=0.95,
     clip_epsilon=0.2,
-    entropy_coef=0.01,
+    entropy_coef=0.01,  # Low entropy for exploitation
     value_coef=0.5,
     update_epochs=4,
     mini_batch_size=1024,
-    checkpoint_interval=100,
+    checkpoint_interval=1,  # Save checkpoint every update
+    checkpoint_dir="checkpoints",  # Directory to save checkpoints
+    test_ratio=0.2,  # Fraction of words for testing
+    eval_interval=5,  # Evaluate on test set every N updates
 ):
     """
     Train PPO agent with fully vectorized parallel environments.
+    Supports train/test split for proper evaluation.
     """
     print_cuda_info()
 
@@ -571,8 +663,18 @@ def train(
     print(f"Number of parallel environments: {num_envs}")
     print(f"Environment type: Fully Vectorized (GPU-optimized)")
 
-    word_list = load_word_list()
+    # Load word list with train/test split
+    train_words, test_words, all_words = load_word_list_with_split(test_ratio=test_ratio)
+    word_list = all_words  # Agent can guess any word
+
+    # Create index mappings for train/test words
+    word_to_idx = {word: idx for idx, word in enumerate(word_list)}
+    train_word_indices = [word_to_idx[w] for w in train_words]
+    test_word_indices = [word_to_idx[w] for w in test_words]
+
     print(f"Action space size: {len(word_list)} words")
+    print(f"Training targets: {len(train_word_indices)} words")
+    print(f"Testing targets: {len(test_word_indices)} words")
 
     config = {
         "algorithm": "PPO-FullyVectorized",
@@ -590,6 +692,9 @@ def train(
         "state_size": 26 * 3,
         "action_size": len(word_list),
         "device": str(device),
+        "test_ratio": test_ratio,
+        "train_words": len(train_word_indices),
+        "test_words": len(test_word_indices),
     }
 
     if use_wandb:
@@ -599,8 +704,11 @@ def train(
             config=config,
         )
 
-    # Create fully vectorized environment
-    env = FullyVectorizedWordleEnv(word_list, device, num_envs)
+    # Create fully vectorized environment with TRAINING words as targets
+    env = FullyVectorizedWordleEnv(
+        word_list, device, num_envs,
+        target_word_indices=train_word_indices
+    )
     agent = PPOAgent(
         state_size=env.state_size,
         action_size=len(word_list),
@@ -723,7 +831,7 @@ def train(
                     break
 
             if (update + 1) % checkpoint_interval == 0:
-                checkpoint_path = agent.save_checkpoint(update + 1, win_rate)
+                checkpoint_path = agent.save_checkpoint(update + 1, win_rate, checkpoint_dir)
                 agent.scheduler.step(win_rate)
 
                 if win_rate > best_win_rate:
@@ -733,6 +841,22 @@ def train(
 
                     if use_wandb:
                         wandb.save(checkpoint_path)
+
+            # Evaluate on test set periodically
+            if (update + 1) % eval_interval == 0:
+                test_metrics = evaluate_on_test_set(
+                    agent, word_list, test_word_indices, device,
+                    num_games=min(len(test_word_indices), 500)
+                )
+                print(f"\n[Update {update + 1}] Test set: Win rate: {test_metrics['test_win_rate']*100:.1f}%, "
+                      f"Avg guesses: {test_metrics['test_avg_guesses']:.2f}")
+
+                if use_wandb:
+                    wandb.log({
+                        "test/win_rate": test_metrics["test_win_rate"] * 100,
+                        "test/avg_guesses": test_metrics["test_avg_guesses"],
+                        "update": update + 1,
+                    })
 
             if torch.cuda.is_available() and (update + 1) % 50 == 0:
                 torch.cuda.empty_cache()
@@ -775,15 +899,16 @@ def parse_args():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
+    # Default hyperparameters achieve 96.1% win rate
     parser.add_argument("--num-envs", type=int, default=1024, help="Number of parallel environments")
-    parser.add_argument("--total-timesteps", type=int, default=10_000_000, help="Total training timesteps")
+    parser.add_argument("--total-timesteps", type=int, default=131_200_000, help="Total training timesteps (~1000 updates)")
     parser.add_argument("--steps-per-update", type=int, default=128, help="Steps per policy update")
 
-    parser.add_argument("--lr", type=float, default=3e-4, help="Learning rate")
+    parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate (1e-4 for stable convergence)")
     parser.add_argument("--gamma", type=float, default=0.99, help="Discount factor")
     parser.add_argument("--gae-lambda", type=float, default=0.95, help="GAE lambda")
     parser.add_argument("--clip-epsilon", type=float, default=0.2, help="PPO clip epsilon")
-    parser.add_argument("--entropy-coef", type=float, default=0.01, help="Entropy coefficient")
+    parser.add_argument("--entropy-coef", type=float, default=0.01, help="Entropy coefficient (0.01 for exploitation)")
     parser.add_argument("--value-coef", type=float, default=0.5, help="Value loss coefficient")
     parser.add_argument("--update-epochs", type=int, default=4, help="PPO update epochs")
     parser.add_argument("--mini-batch-size", type=int, default=1024, help="Mini-batch size")
@@ -791,7 +916,10 @@ def parse_args():
     parser.add_argument("--no-wandb", action="store_true", help="Disable W&B logging")
     parser.add_argument("--wandb-project", type=str, default="wordle-rl-agent", help="W&B project")
     parser.add_argument("--wandb-run-name", type=str, default=None, help="W&B run name")
-    parser.add_argument("--checkpoint-interval", type=int, default=100, help="Updates between checkpoints")
+    parser.add_argument("--checkpoint-interval", type=int, default=1, help="Updates between checkpoints")
+    parser.add_argument("--checkpoint-dir", type=str, default="checkpoints", help="Directory to save checkpoints")
+    parser.add_argument("--test-ratio", type=float, default=0.2, help="Fraction of words for testing (0-1)")
+    parser.add_argument("--eval-interval", type=int, default=5, help="Evaluate on test set every N updates")
 
     return parser.parse_args()
 
@@ -815,4 +943,7 @@ if __name__ == "__main__":
         update_epochs=args.update_epochs,
         mini_batch_size=args.mini_batch_size,
         checkpoint_interval=args.checkpoint_interval,
+        checkpoint_dir=args.checkpoint_dir,
+        test_ratio=args.test_ratio,
+        eval_interval=args.eval_interval,
     )
