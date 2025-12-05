@@ -18,6 +18,10 @@ Play Wordle in your browser with the official word list (12,966 valid guesses, 3
 
 The script automatically sets up a minimal Python environment and launches the game. Open http://localhost:8080 in your browser.
 
+<p align="center">
+  <img src="assets/wordle_browser_demo.gif" alt="Wordle Browser Demo" width="300">
+</p>
+
 **Controls:**
 - **Type letters** to enter your guess
 - **Enter** to submit guess
