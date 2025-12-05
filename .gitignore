@@ -41,6 +41,7 @@ Thumbs.db
 # Environment & Secrets
 # =============================================================================
 .env
+CLAUDE.md
 
 # =============================================================================
 # Model Checkpoints (keep pre-trained models, ignore training outputs)
