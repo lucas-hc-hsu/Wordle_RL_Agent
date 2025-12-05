@@ -8,10 +8,27 @@ A reinforcement learning agent that learns to play Wordle using Proximal Policy 
 
 The agent learns to solve Wordle puzzles through reinforcement learning, achieving **96.1% win rate** after training.
 
+## Play Wordle
+
+Play Wordle in your browser with the official word list (12,966 valid guesses, 351 common target words):
+
+```bash
+./play_wordle.sh
+```
+
+The script automatically sets up a minimal Python environment and launches the game. Open http://localhost:8080 in your browser.
+
+**Controls:**
+- **Type letters** to enter your guess
+- **Enter** to submit guess
+- **Backspace** to delete
+- **Space** to start a new game
+
 ## Project Structure
 
 ```
 Wordle_RL_Agent/
+├── play_wordle.sh                  # One-click Wordle game launcher
 ├── model/
 │   └── ppo.py                      # Actor-Critic model for PPO
 ├── scripts/
@@ -32,21 +49,6 @@ Wordle_RL_Agent/
 ├── docs/                           # Documentation
 └── checkpoints/                    # Saved model checkpoints
 ```
-
-## Play Wordle
-
-Play Wordle in your browser with the official word list (12,966 valid guesses, 351 common target words):
-
-```bash
-source .venv/bin/activate
-python scripts/play_wordle.py
-```
-
-Open http://localhost:8080 in your browser. Controls:
-- **Type letters** to enter your guess
-- **Enter** to submit guess
-- **Backspace** to delete
-- **Space** to start a new game
 
 ## Quick Start
 
