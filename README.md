@@ -8,7 +8,7 @@ A reinforcement learning agent that learns to play Wordle using Proximal Policy 
 
 The agent learns to solve Wordle puzzles through reinforcement learning, achieving **96.1% win rate** after training.
 
-## Play Wordle
+## Play Wordle with One Click
 
 Play Wordle in your browser with the official word list (12,966 valid guesses, 351 common target words):
 
