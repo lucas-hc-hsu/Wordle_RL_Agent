@@ -54,27 +54,40 @@ source .venv/bin/activate
 uv pip install torch numpy tqdm nltk wandb pygame
 ```
 
-### Training
+### Using Pre-trained Model
+
+The repository includes pre-trained checkpoints that achieve 96.1% win rate:
 
 ```bash
 source .venv/bin/activate
 
-# Train with default hyperparameters (achieves 96.1% win rate)
-python scripts/training/train_ppo_vectorized.py
-
-# Quick test run
-python scripts/training/train_ppo_vectorized.py --num-envs 64 --total-timesteps 100000 --no-wandb
-```
-
-### Visualization
-
-```bash
 # Watch the agent play (pygame)
-python scripts/visualize_agent.py --checkpoint checkpoints/wordle_ppo_vectorized.pt
+python scripts/visualize_agent.py
 
 # Interactive play
 python scripts/inference.py
+```
 
+### Training Your Own Model (Optional)
+
+If you want to train the model from scratch:
+
+```bash
+source .venv/bin/activate
+
+# Quick test run (~10 seconds)
+python scripts/training/train_ppo_vectorized.py --num-envs 64 --total-timesteps 100000 --no-wandb
+
+# Full training with default hyperparameters (~2 hours, achieves 96.1% win rate)
+python scripts/training/train_ppo_vectorized.py --no-wandb
+
+# Full training with W&B logging
+python scripts/training/train_ppo_vectorized.py --wandb-project "wordle-rl-agent"
+```
+
+### Video Rendering
+
+```bash
 # Render video (outputs to assets/videos/)
 source .venv-manim/bin/activate
 manim -pql scripts/rendering/render_multi_games_landscape.py ComparisonScene

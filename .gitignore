@@ -42,12 +42,14 @@ Thumbs.db
 .env
 
 # =============================================================================
-# Model Checkpoints
+# Model Checkpoints (keep pre-trained models, ignore training outputs)
 # =============================================================================
-checkpoints/
-*.pt
 *.pth
 *.onnx
+# Ignore numbered checkpoints from training runs (e.g., _1.pt, _2.pt)
+checkpoints/wordle_ppo_vectorized_[0-9].pt
+checkpoints/wordle_ppo_vectorized_[0-9][0-9].pt
+checkpoints/wordle_ppo_vectorized_[0-9][0-9][0-9][0-9].pt
 
 # =============================================================================
 # Experiment Tracking
