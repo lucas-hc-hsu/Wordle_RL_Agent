@@ -99,18 +99,14 @@ class BrowserWordleDemo(Scene):
             # Get feedback
             feedback = self.get_feedback(guess, target_word)
 
-            # Reveal feedback with flip animation
+            # Reveal feedback with color fill
             for letter_idx, (letter, fb) in enumerate(zip(guess, feedback)):
                 tile = board[guess_idx][letter_idx]
                 color = self.get_color(fb)
 
-                # Find the letter text (last added at this position)
-                letter_text = Text(letter, font_size=48, color=WORDLE_WHITE, weight=BOLD)
-                letter_text.move_to(tile.get_center())
-
+                # Apply color to tile
                 self.play(
-                    tile.animate.set_fill(color=color, opacity=1),
-                    tile.animate.set_stroke(color=color),
+                    tile.animate.set_fill(color=color, opacity=1).set_stroke(color=color),
                     run_time=0.2
                 )
 
