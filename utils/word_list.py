@@ -299,32 +299,20 @@ def load_word_list():
 
 def load_word_list_extended():
     """
-    Load an extended word list combining Wordle words with NLTK corpus.
-    Falls back to Wordle list if NLTK is unavailable.
+    Load the complete official Wordle word list (answers + valid guesses).
+    This combines the 2,309 answer words with 10,656 additional valid guesses
+    for a total of ~12,965 words that are accepted in the real Wordle game.
 
     Returns:
-        list: Sorted list of valid 5-letter words
+        list: Sorted list of all valid 5-letter Wordle words
     """
-    # Start with official Wordle words
+    from utils.wordle_valid_guesses import WORDLE_VALID_GUESSES
+
+    # Combine answer words and valid guesses
     word_set = set(word.lower() for word in WORDLE_WORDS if len(word) == 5 and word.isalpha())
+    word_set.update(word.lower() for word in WORDLE_VALID_GUESSES if len(word) == 5 and word.isalpha())
 
-    try:
-        import nltk
-        from nltk.corpus import words as nltk_words
-
-        # Download required NLTK data
-        nltk.download("words", quiet=True)
-
-        # Add common words from NLTK
-        for word in nltk_words.words():
-            if len(word) == 5 and word.isalpha() and word.islower():
-                word_set.add(word.lower())
-
-        print(f"Loaded {len(word_set)} words (Wordle + NLTK)")
-
-    except Exception as e:
-        print(f"NLTK unavailable, using Wordle list only: {e}")
-        print(f"Loaded {len(word_set)} Wordle words")
+    print(f"Loaded {len(word_set)} official Wordle words (answers + valid guesses)")
 
     return sorted(list(word_set))
 

@@ -2,8 +2,6 @@
 
 A reinforcement learning agent that learns to play Wordle using Proximal Policy Optimization (PPO) algorithm.
 
-## Demo
-
 ![Wordle RL Agent Demo](assets/demo.gif)
 
 *Training progression: Step 100 → Step 200 → Step 300 (Win rate improves as training progresses)*
@@ -24,7 +22,8 @@ Wordle_RL_Agent/
 │   │   ├── render_multi_games_landscape.py
 │   │   └── render_multi_games_portrait.py
 │   ├── visualize_agent.py          # Visual Wordle simulation (pygame)
-│   └── inference.py                # Interactive Wordle player
+│   ├── inference.py                # Interactive Wordle player
+│   └── play_wordle.py              # Browser-based Wordle game
 ├── utils/
 │   └── word_list.py                # Curated 5-letter word list
 ├── assets/
@@ -33,6 +32,21 @@ Wordle_RL_Agent/
 ├── docs/                           # Documentation
 └── checkpoints/                    # Saved model checkpoints
 ```
+
+## Play Wordle
+
+Play Wordle in your browser with the official word list (12,966 valid guesses, 351 common target words):
+
+```bash
+source .venv/bin/activate
+python scripts/play_wordle.py
+```
+
+Open http://localhost:8080 in your browser. Controls:
+- **Type letters** to enter your guess
+- **Enter** to submit guess
+- **Backspace** to delete
+- **Space** to start a new game
 
 ## Quick Start
 
